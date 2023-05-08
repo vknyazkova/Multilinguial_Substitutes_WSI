@@ -1,0 +1,8 @@
+tqdm
+fasttext-wheel
+fuzzywuzzy[speedup]
+scikit-learn
+googletrans
+numpy
+sklearn
+pandas
