@@ -36,6 +36,7 @@ def _convert_labels_to_semeval_format(
 ):
     """
     target_words, context_ids and labels have to be the same size = number of contexts
+
     :param target_words: target word for every context
     :param context_ids:context_id for every context
     :param labels: cluster (or sense) label for every context
