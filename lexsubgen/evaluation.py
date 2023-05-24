@@ -86,7 +86,6 @@ def compute_semeval_2010_metrics(
     for word, (fs, prec, rec) in fscore.items():
         vm, homogeneity, completeness = vmeasure[word]
         metrics[word] = [fs, prec, rec, vm, homogeneity, completeness, (fs * vm) ** 0.5]
-    print('fscore\tprecision\trecall\tvmeasure\thomogenity\completness')
     return metrics
 
 
@@ -101,7 +100,7 @@ class WSIEvaluator:
 
     def _read_cluster_labels(self):
         with open(self.clust_res_path, 'r') as f:
-            clusterization_result = json.load(f)
+            params, clusterization_result = json.load(f)
         my_labels = {context[0]: '.'.join(context[0].split('.')[:2]) + '.' + context[1] for word in
                      clusterization_result for context in clusterization_result[word][1]}
         my_labels = [my_labels[idx] for idx in self.dataset["context_id"]]
@@ -130,4 +129,5 @@ class WSIEvaluator:
         scores = pd.DataFrame(res.values(),
                               columns=metrics_names,
                               index=res.keys())
+        scores.loc['mean'] = scores.mean()
         return scores

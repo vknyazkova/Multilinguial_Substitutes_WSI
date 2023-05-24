@@ -5,6 +5,7 @@ from typing import Iterable, List, Union, Tuple, Dict
 from collections import defaultdict
 from pathlib import Path
 import numpy as np
+from tqdm import tqdm
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics import silhouette_score
@@ -12,7 +13,9 @@ from sklearn.metrics import silhouette_score
 
 class SubstituteClusterizer:
     def __init__(self,
-                 n_clusters: Union[int, str] ='maxsil=range(2, 9)',
+                 n_clusters: Union[int, str] ='maxsil=range(2, 10)',
+                 weighted_tfidf: bool = False,
+                 use_idf: bool = False,
                  metrics='cosine',
                  linkage='average'):
         """
@@ -27,9 +30,10 @@ class SubstituteClusterizer:
         """
         self.ncluster_strategy = None
         self.n_clusters = n_clusters
+        self.weighted_tfidf = weighted_tfidf
+        self.idf = use_idf
         self.metric = metrics
         self.linkage = linkage
-
 
     @property
     def n_clusters(self):
@@ -74,6 +78,16 @@ class SubstituteClusterizer:
                 contexts[context] += ' '.join(subst.split()[:n_subst]) + ' '
         return list(contexts.keys()), list(contexts.values())
 
+    @staticmethod
+    def _transform4weighted(substitutes: List[str],
+                            n_subst: int) -> List[str]:
+        repeated_substitutes = []
+        for context_subst in substitutes:
+            context_subst = context_subst.split()
+            repeated_substitutes.append(' '.join(
+                [' '.join([context_subst[i]] * (n_subst - i % n_subst)) for i in range(len(context_subst))]))
+        return repeated_substitutes
+
     def _vectorize(self,
                   documents: List[str]) -> np.ndarray:
         """
@@ -81,8 +95,9 @@ class SubstituteClusterizer:
         :param documents: list of string of substitutes for every context
         :return:
         """
-        vectorizer = TfidfVectorizer()
-        return vectorizer.fit_transform(documents).toarray()
+        vectorizer = TfidfVectorizer(analyzer=lambda s: s.split(), use_idf=self.idf)
+        vectorized_documents = vectorizer.fit_transform(documents)
+        return vectorized_documents.toarray()
 
     def _perform_clustering(self, n_clusters: int, vectors: np.ndarray):
         clusterizer = AgglomerativeClustering(n_clusters,
@@ -109,8 +124,9 @@ class SubstituteClusterizer:
                              lang_subst_path: Iterable[os.PathLike],
                              n_subst: int = 3) -> Tuple[float, List[Tuple[str, str]]]:
         context_ids, documents = self._unite_lang_substitutes(lang_subst_path, target_word, n_subst)
+        if self.weighted_tfidf:
+            documents = self._transform4weighted(substitutes=documents, n_subst=n_subst)
         vectors = self._vectorize(documents)
-
         if self.ncluster_strategy == 'fix':
             labels = self._perform_clustering(self.n_clusters, vectors)
             sil_score = silhouette_score(vectors, labels, metric=self.metric)
@@ -125,16 +141,20 @@ class SubstituteClusterizer:
         with open(lang_subst_paths[0], 'r', encoding='utf-8') as f:
             targets = list(json.load(f).keys())
         full_clustering = {}
-        for target in targets:
+        for target in tqdm(targets):
             res = self.clusterize_instances(target, lang_subst_paths, n_subst)
             full_clustering[target] = res
         return full_clustering
 
     def _save_clusterization(self,
                              clusterization: Dict[str, Tuple[float, List[Tuple[str, str]]]],
-                             save_dir):
+                             params: dict,
+                             save_dir: Union[str, os.PathLike],
+                             filename: str = None):
         Path(save_dir).mkdir(parents=True, exist_ok=True)
-        result_file = Path(save_dir, 'clusterization.json')
+        if not filename:
+            filename = 'clusterization.json'
+        result_file = Path(save_dir, filename)
 
         class MyEncoder(json.JSONEncoder):
             def default(self, obj):
@@ -148,5 +168,5 @@ class SubstituteClusterizer:
                     return super(MyEncoder, self).default(obj)
 
         with open(result_file, 'w', encoding='utf-8') as newf:
-            json.dump(clusterization, newf, cls=MyEncoder, default=str)
+            json.dump((params, clusterization), newf, cls=MyEncoder, default=str)
         return result_file
