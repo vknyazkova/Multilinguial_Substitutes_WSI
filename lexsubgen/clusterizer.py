@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.metrics import silhouette_score
 
 
@@ -16,6 +16,7 @@ class SubstituteClusterizer:
                  n_clusters: Union[int, str] ='maxsil=range(2, 10)',
                  weighted_tfidf: bool = False,
                  use_idf: bool = False,
+                 clusterizer: str = 'agglomerative',
                  metrics='cosine',
                  linkage='average'):
         """
@@ -32,6 +33,7 @@ class SubstituteClusterizer:
         self.n_clusters = n_clusters
         self.weighted_tfidf = weighted_tfidf
         self.idf = use_idf
+        self.cluster_alg = clusterizer
         self.metric = metrics
         self.linkage = linkage
 
@@ -100,9 +102,13 @@ class SubstituteClusterizer:
         return vectorized_documents.toarray()
 
     def _perform_clustering(self, n_clusters: int, vectors: np.ndarray):
-        clusterizer = AgglomerativeClustering(n_clusters,
-                                              metric=self.metric,
-                                              linkage=self.linkage)
+        if self.cluster_alg == 'agglomerative':
+            clusterizer = AgglomerativeClustering(n_clusters,
+                                                  metric=self.metric,
+                                                  linkage=self.linkage)
+        elif self.cluster_alg == 'kmeans':
+            clusterizer = KMeans(n_clusters)
+
         clusterizer.fit(vectors)
         return clusterizer.labels_
 
