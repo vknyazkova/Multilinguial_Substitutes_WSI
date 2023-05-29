@@ -26,8 +26,13 @@ class SubstituteClusterizer:
                 'maxsil' - range(2, number of contexts)
                 'maxsil=5' - range(2, 5)
                 'maxsil=range(2, 9)' - clusters range
-        :param metrics: parameter for AgglomerativeClustering
-        :param linkage: parameter for AgglomerativeClustering
+        :param weighted_tfidf: consider substitute rank in vectorization or not
+        :param use_idf: use inverse document frequency or not
+        :param clusterizer: what clustering algorithm to use:
+            agglomerative - for AgglomerativeClustering
+            kmeans - for Kmeans
+        :param metrics: parameter for AgglomerativeClustering only
+        :param linkage: parameter for AgglomerativeClustering only
         """
         self.ncluster_strategy = None
         self.n_clusters = n_clusters
@@ -68,9 +73,11 @@ class SubstituteClusterizer:
                                 n_subst: int = 3) -> Tuple[List[str], List[str]]:
         """
         Unites substitutes from different languages in one document
+
         :param lang_subst_paths: path to json file with substitutes ({target: {instance: substitutes str}}
         :param target: target word
         :param n_subst: how many substitutes of each language use for clustering
+        :return: context_ids, documents
         """
         contexts = defaultdict(str)
         for lang in lang_subst_paths:
@@ -83,6 +90,13 @@ class SubstituteClusterizer:
     @staticmethod
     def _transform4weighted(substitutes: List[str],
                             n_subst: int) -> List[str]:
+        """
+        Multiplies substitutes as many times as its reversed rank
+
+        :param substitutes: list of length n_contexts with string of joined substitutes for the current context
+        :param n_subst: how many substitutes of each language
+        :return: list of joined (and reduplicated) substitutes for each context
+        """
         repeated_substitutes = []
         for context_subst in substitutes:
             context_subst = context_subst.split()
@@ -93,15 +107,23 @@ class SubstituteClusterizer:
     def _vectorize(self,
                   documents: List[str]) -> np.ndarray:
         """
-        Vectorizes documents for one target
+        Vectorizes documents of one target
+
         :param documents: list of string of substitutes for every context
-        :return:
+        :return: vectorized documents
         """
         vectorizer = TfidfVectorizer(analyzer=lambda s: s.split(), use_idf=self.idf)
         vectorized_documents = vectorizer.fit_transform(documents)
         return vectorized_documents.toarray()
 
     def _perform_clustering(self, n_clusters: int, vectors: np.ndarray):
+        """
+        Performs clustering using one of the algorithms
+
+        :param n_clusters: number of clusters for clusterization
+        :param vectors: vectors to clusterize
+        :return: cluster labels
+        """
         if self.cluster_alg == 'agglomerative':
             clusterizer = AgglomerativeClustering(n_clusters,
                                                   metric=self.metric,
@@ -113,6 +135,12 @@ class SubstituteClusterizer:
         return clusterizer.labels_
 
     def _maximize_silscore(self, vectors: np.ndarray):
+        """
+        Find clusterization maximizing silhouette score
+
+        :param vectors: vectors to clusterize
+        :return: (labels, sil_score) for the best clusterization
+        """
         scores = {}
         if not self.n_clusters:
             ncl_range = range(2, len(vectors))
@@ -129,6 +157,15 @@ class SubstituteClusterizer:
                              target_word: str,
                              lang_subst_path: Iterable[os.PathLike],
                              n_subst: int = 3) -> Tuple[float, List[Tuple[str, str]]]:
+        """
+        Clusters instances of the target word
+
+        :param target_word: target word in semeval format (like 'access.n')
+        :param lang_subst_path: paths with files with substitutes
+        :param n_subst: how many substitutes to use
+        :return: (sil_score, clusterization)
+            clusterization - list of pairs (context_id, label)
+        """
         context_ids, documents = self._unite_lang_substitutes(lang_subst_path, target_word, n_subst)
         if self.weighted_tfidf:
             documents = self._transform4weighted(substitutes=documents, n_subst=n_subst)
