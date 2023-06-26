@@ -7,6 +7,9 @@ sklearn
 spacy
 tqdm
 scikit-learn
+torch
+wordfreq
+transformers
 
 
 
