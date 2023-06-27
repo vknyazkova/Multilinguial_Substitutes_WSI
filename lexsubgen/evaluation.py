@@ -122,7 +122,7 @@ class WSIEvaluator:
         my_labels = self._read_cluster_labels()
         res = compute_semeval_2010_metrics(gold_labels=gold_labels,
                                            pred_labels=my_labels,
-                                           group_by=self.dataset["group_by"].to_list(),
+                                           group_by=self.dataset["target_lemma"].to_list(),
                                            context_ids=self.dataset["context_id"].to_list(),
                                            data_path=self.semeval_folder)
         metrics_names = ['fscore', 'precision', 'recall', 'vmeasure', 'homogenity', 'completeness', '(fs * vm) ** 0.5']

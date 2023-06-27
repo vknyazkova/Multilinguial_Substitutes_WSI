@@ -3,13 +3,13 @@ fasttext-wheel
 fuzzywuzzy[speedup]
 numpy
 pandas
-sklearn
 spacy
 tqdm
 scikit-learn
 torch
-wordfreq
 transformers
+simalign
+nltk
 
 
 

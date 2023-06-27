@@ -2,10 +2,12 @@ import ast
 import json
 import os
 from typing import Iterable, List, Union, Tuple, Dict
-from collections import defaultdict
+from functools import partial
 from pathlib import Path
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
+import  sklearn
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.metrics import silhouette_score
@@ -18,7 +20,8 @@ class SubstituteClusterizer:
                  use_idf: bool = False,
                  clusterizer: str = 'agglomerative',
                  metrics='cosine',
-                 linkage='average'):
+                 linkage='average',
+                 save_models: bool = False):
         """
         :param n_clusters: number of clusters or strategy for selecting number of clusters
             'fix' - clustering with a fixed number of clusters
@@ -41,6 +44,10 @@ class SubstituteClusterizer:
         self.cluster_alg = clusterizer
         self.metric = metrics
         self.linkage = linkage
+
+        self.save_models = save_models
+        self._vectorizers = {}  # {target: vocabulary for tf-idf}
+        self._clusterizers = {}  # {target: cluster_centroids
 
     @property
     def n_clusters(self):
@@ -67,9 +74,17 @@ class SubstituteClusterizer:
                 elif isinstance(ncl, range):
                     self._nclusters = ncl
 
+    @property
+    def vectorizers(self):
+        return self._vectorizers
+
+    @property
+    def clusterizers(self):
+        return self._clusterizers
+
     @staticmethod
-    def _unite_lang_substitutes(lang_subst_paths: Iterable[os.PathLike],
-                                target: str,
+    def _unite_lang_substitutes(langs: Iterable[str],
+                                target_data: pd.DataFrame,
                                 n_subst: int = 3) -> Tuple[List[str], List[str]]:
         """
         Unites substitutes from different languages in one document
@@ -79,13 +94,14 @@ class SubstituteClusterizer:
         :param n_subst: how many substitutes of each language use for clustering
         :return: context_ids, documents
         """
-        contexts = defaultdict(str)
-        for lang in lang_subst_paths:
-            with open(lang, 'r') as f:
-                lang_subst = json.load(f)
-            for context, subst in lang_subst[target].items():
-                contexts[context] += ' '.join(subst.split()[:n_subst]) + ' '
-        return list(contexts.keys()), list(contexts.values())
+
+        def select_substitutes(row, k):
+            return ' '.join([' '.join(subst.split()[:k]) for subst in row['substitutes']])
+
+        res = target_data[
+            target_data['lang'].isin(langs)
+        ].groupby(['context_id']).apply(partial(select_substitutes, k=n_subst))
+        return res.index.to_list(), res.to_list()
 
     @staticmethod
     def _transform4weighted(substitutes: List[str],
@@ -105,7 +121,7 @@ class SubstituteClusterizer:
         return repeated_substitutes
 
     def _vectorize(self,
-                  documents: List[str]) -> np.ndarray:
+                  documents: List[str]):
         """
         Vectorizes documents of one target
 
@@ -114,9 +130,9 @@ class SubstituteClusterizer:
         """
         vectorizer = TfidfVectorizer(analyzer=lambda s: s.split(), use_idf=self.idf)
         vectorized_documents = vectorizer.fit_transform(documents)
-        return vectorized_documents.toarray()
+        return vectorized_documents.toarray(), vectorizer
 
-    def _perform_clustering(self, n_clusters: int, vectors: np.ndarray):
+    def _perform_clustering(self, target: str, n_clusters: int, vectors: np.ndarray):
         """
         Performs clustering using one of the algorithms
 
@@ -132,9 +148,12 @@ class SubstituteClusterizer:
             clusterizer = KMeans(n_clusters)
 
         clusterizer.fit(vectors)
+
+        if self.cluster_alg == 'kmeans' and self.save_models:
+            self._clusterizers[target] = clusterizer.cluster_centers_
         return clusterizer.labels_
 
-    def _maximize_silscore(self, vectors: np.ndarray):
+    def _maximize_silscore(self, target:str, vectors: np.ndarray):
         """
         Find clusterization maximizing silhouette score
 
@@ -147,45 +166,39 @@ class SubstituteClusterizer:
         else:
             ncl_range = self.n_clusters
         for n in ncl_range:
-            cl_labels = self._perform_clustering(n, vectors)
+            cl_labels = self._perform_clustering(target, n, vectors)
             scores[n] = silhouette_score(vectors, cl_labels, metric=self.metric)
         best_cl = max(scores.items(), key=lambda x: x[1])
-        final_labels = self._perform_clustering(n_clusters=best_cl[0], vectors=vectors)
+        final_labels = self._perform_clustering(target, n_clusters=best_cl[0], vectors=vectors)
         return final_labels, best_cl[1]
 
     def clusterize_instances(self,
-                             target_word: str,
-                             lang_subst_path: Iterable[os.PathLike],
+                             target: str,
+                             rows: pd.DataFrame,
+                             langs: List[str],
                              n_subst: int = 3) -> Tuple[float, List[Tuple[str, str]]]:
-        """
-        Clusters instances of the target word
-
-        :param target_word: target word in semeval format (like 'access.n')
-        :param lang_subst_path: paths with files with substitutes
-        :param n_subst: how many substitutes to use
-        :return: (sil_score, clusterization)
-            clusterization - list of pairs (context_id, label)
-        """
-        context_ids, documents = self._unite_lang_substitutes(lang_subst_path, target_word, n_subst)
+        context_ids, documents = self._unite_lang_substitutes(langs, rows, n_subst)
         if self.weighted_tfidf:
             documents = self._transform4weighted(substitutes=documents, n_subst=n_subst)
-        vectors = self._vectorize(documents)
+        vectors, vectorizer = self._vectorize(documents)
+        if self.save_models:
+            self._vectorizers[target] = vectorizer.vocabulary_
         if self.ncluster_strategy == 'fix':
-            labels = self._perform_clustering(self.n_clusters, vectors)
+            labels = self._perform_clustering(target, self.n_clusters, vectors)
             sil_score = silhouette_score(vectors, labels, metric=self.metric)
         elif self.ncluster_strategy == 'maxsil':
-            labels, sil_score = self._maximize_silscore(vectors)
+            labels, sil_score = self._maximize_silscore(target, vectors)
 
         return sil_score, list(zip(context_ids, labels))
 
     def cluster_all(self,
-                    lang_subst_paths: Iterable[os.PathLike],
+                    subst_dataset: pd.DataFrame,
+                    langs: List[str],
                     n_subst: int = 3):
-        with open(lang_subst_paths[0], 'r', encoding='utf-8') as f:
-            targets = list(json.load(f).keys())
+        targets_contexts = subst_dataset.groupby(['target_lemma']).groups
         full_clustering = {}
-        for target in tqdm(targets):
-            res = self.clusterize_instances(target, lang_subst_paths, n_subst)
+        for target in tqdm(targets_contexts):
+            res = self.clusterize_instances(target, subst_dataset.loc[targets_contexts[target]], langs, n_subst)
             full_clustering[target] = res
         return full_clustering
 

@@ -1,10 +1,14 @@
 from typing import List, Iterable, Tuple
+from string import punctuation
 
 import numpy as np
 import torch
 from torch.nn.functional import softmax
 import transformers
 from transformers import AutoTokenizer, BertForMaskedLM
+
+
+puncts = ['...', '«', '»', '։', '،', '؟', '。', '•', '„'] + list(punctuation)
 
 
 class BertProbEstimator:
@@ -32,9 +36,12 @@ class BertProbEstimator:
         self._embeddings = self._extract_embeddings()
 
         vocab = self._tokenizer.get_vocab()
-        subword_indexes = [vocab[t] for t in vocab if t.startswith('##')]
-        self._subword_mask = np.zeros(self._embeddings.size()[0])
-        self._subword_mask[subword_indexes] = 1
+        not_word_indexes = [vocab[t] for t in vocab if (t.startswith('##') or t in puncts)]
+        special_tokens = self._tokenizer.all_special_ids
+        not_word_indexes.extend(special_tokens)
+
+        self._subword_mask = np.zeros(self._embeddings.size()[0], dtype=bool)
+        self._subword_mask[not_word_indexes] = True
 
     @property
     def model(self):
@@ -56,8 +63,8 @@ class BertProbEstimator:
                                sentences: Iterable[List[str]],
                                target_position: List[int]
                                ) -> Tuple[
-                                  transformers.tokenization_utils_base.BatchEncoding,
-                                  torch.tensor]:
+        transformers.tokenization_utils_base.BatchEncoding,
+        torch.tensor]:
         """
         Replaces word on target position with [MASK] and tokenizes using bert tokenizer
         Args:
@@ -124,7 +131,7 @@ class BertProbEstimator:
         """
         targets = np.array(targets)
         target_ids = np.array(self.tokenizer.convert_tokens_to_ids(targets))
-        target_embeddings = self.embeddings[target_ids, :]  # (n_instances, emb_size)
+        target_embeddings = self.embeddings[target_ids, :].detach().cpu().numpy()  # (n_instances, emb_size)
 
         oov_idx = np.where(target_ids == 100)[0]
         if np.any(oov_idx):
