@@ -1,0 +1,6 @@
+,fscore,precision,recall,vmeasure,homogenity,completeness,(fs * vm) ** 0.5,model,target_injection,langs,n_subst,clusterization,n_langs
+bert__source_target__en-ru-fr-de-es__5__kmeans.json,33.019999999999996,25.880000000000003,58.510000000000005,23.73,19.939999999999998,36.160000000000004,26.902050767757334,bert,bert,bert,bert,bert,1
+bert__source_target__en-ru-fr-de-es__10__kmeans.json,44.010000000000005,39.21999999999999,64.30000000000001,32.11,29.959999999999997,47.620000000000005,36.563424568390005,source_target,source_target,source_target,source_target,source_target,1
+bert__source_target__en-ru-fr-de-es__15__kmeans.json,34.720000000000006,28.73,57.79999999999999,27.46,23.799999999999997,41.059999999999995,30.0121677309439,en-ru-fr-de-es,en-ru-fr-de-es,en-ru-fr-de-es,en-ru-fr-de-es,en-ru-fr-de-es,5
+bert__source_target__en-ru-fr-de-es__20__kmeans.json,38.660000000000004,35.92,57.52,23.21,21.549999999999997,33.260000000000005,28.271480701234644,5,10,15,20,25,1
+bert__source_target__en-ru-fr-de-es__25__kmeans.json,39.260000000000005,34.8,58.64,26.47,23.72,38.1,30.494885978510553,kmeans.json,kmeans.json,kmeans.json,kmeans.json,kmeans.json,1
