@@ -1,0 +1,5 @@
+*.xml
+*.pyc
+venv/
+.ipynb_checkpoints
+.idea
